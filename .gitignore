@@ -1,0 +1,49 @@
+# Внутренняя документация НАМЕРЕННО не публикуется в репозиторий — только локально
+# (решение пользователя, 2026-07-31/08-01: репозиторий публичный, Docs/, CLAUDE.md
+# и все README — рабочие файлы «для нас»; краткая публичная документация будет
+# позже отдельной папкой — тогда добавить для неё исключение-негацию !папка/**.
+# Не удалять эти строки без команды пользователя)
+Docs/
+CLAUDE.md
+README.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+
+# Записи логгера (не хранить данные в репозитории)
+recordings/
+*.csv
+
+# Прошивка — артефакты сборки (STM32CubeIDE / Eclipse CDT)
+HARDWARE_App/**/build/
+HARDWARE_App/**/Debug/
+HARDWARE_App/**/Release/
+*.elf
+*.bin
+*.hex
+*.map
+*.o
+*.d
+*.su
+*.cyclo
+
+# Eclipse/CubeIDE: машинно-зависимое.
+# Сами .project / .cproject / .mxproject / .ioc / .ld / Core / Drivers — КОММИТИМ.
+.metadata/
+RemoteSystemsTempFiles/
+HARDWARE_App/**/.settings/language.settings.xml
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
