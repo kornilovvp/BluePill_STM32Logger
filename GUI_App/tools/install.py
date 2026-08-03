@@ -28,7 +28,7 @@ def main() -> int:
         return 1
     print(f"Python {ver} — ок")
 
-    req = Path(__file__).with_name("requirements.txt")
+    req = Path(__file__).resolve().parent.parent / "requirements.txt"
     print(f"Установка зависимостей из {req.name} ...\n")
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "--upgrade", "-r", str(req)]
