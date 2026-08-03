@@ -21,16 +21,23 @@ _LAYOUT = [
 ]
 
 
+#  нижний ряд несёт подписи оси X — добавка выравнивает видимую высоту D1 и D2
+_X_STRIP_EXTRA = 0.35
+
+
 class Charts:
 
     def __init__(self):
         self._series: dict[str, int] = {}
         self._x_axes: list[int] = []
+        self._analog_y: list[int] = []
+        self._y_released = False
 
     # ── построение ──────────────────────────────────────────────────────────
 
     def build(self) -> None:
         row_ratios = [row[5] for row in _LAYOUT]
+        row_ratios[-1] += _X_STRIP_EXTRA
 
         with dpg.subplots(rows=len(_LAYOUT), columns=1,
                           link_all_x=True, width=-1, height=-1,
@@ -48,6 +55,9 @@ class Charts:
                     y_axis = dpg.add_plot_axis(dpg.mvYAxis, label=title)
                     dpg.set_axis_limits(y_axis, *ylim)
 
+                    if style == "line":
+                        self._analog_y.append(y_axis)   # освободим для зума колесом
+
                     add_series = (dpg.add_line_series if style == "line"
                                   else dpg.add_stair_series)
                     series = add_series([], [], parent=y_axis)
@@ -60,6 +70,13 @@ class Charts:
     # ── обновление ──────────────────────────────────────────────────────────
 
     def update(self, x, channels: dict, window_s: float) -> None:
+        if not self._y_released:
+            #  с первой отрисовкой Y аналоговых каналов отпускаются на свободу:
+            #  колесо мыши — масштаб, перетаскивание — сдвиг, двойной клик — автофит
+            for axis in self._analog_y:
+                dpg.set_axis_limits_auto(axis)
+            self._y_released = True
+
         for axis in self._x_axes:
             dpg.set_axis_limits(axis, -window_s, 0.0)
 
