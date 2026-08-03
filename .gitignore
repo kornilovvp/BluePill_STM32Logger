@@ -34,6 +34,21 @@ HARDWARE_App/**/Release/
 *.su
 *.cyclo
 
+# IAR EWARM — артефакты сборки и локальные настройки.
+# Сами .eww / .ewp / .ewd / .ewt и startup — КОММИТИМ.
+HARDWARE_App/**/EWARM/settings/
+HARDWARE_App/**/Exe/
+HARDWARE_App/**/Obj/
+HARDWARE_App/**/List/
+HARDWARE_App/**/BrowseInfo/
+Backup of *
+*.dep
+*.out
+*.pbi
+*.pbd
+.ninja_deps
+.ninja_log
+
 # Eclipse/CubeIDE: машинно-зависимое.
 # Сами .project / .cproject / .mxproject / .ioc / .ld / Core / Drivers — КОММИТИМ.
 .metadata/
