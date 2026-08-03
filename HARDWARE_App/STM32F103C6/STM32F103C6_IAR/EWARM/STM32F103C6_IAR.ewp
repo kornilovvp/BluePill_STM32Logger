@@ -351,6 +351,7 @@
           <state>$PROJ_DIR$/../USB_DEVICE/App</state>
           <state>$PROJ_DIR$/../USB_DEVICE/Target</state>
           <state>$PROJ_DIR$/../Core/Inc</state>
+          <state>$PROJ_DIR$/../../../CORE/Inc</state>
           <state>$PROJ_DIR$/../Drivers/STM32F1xx_HAL_Driver/Inc</state>
           <state>$PROJ_DIR$/../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy</state>
           <state>$PROJ_DIR$/../Middlewares/ST/STM32_USB_Device_Library/Core/Inc</state>
@@ -1085,6 +1086,18 @@
       <data></data>
     </settings>
   </configuration>
+  <group>
+    <name>CORE</name>
+    <file>
+      <name>$PROJ_DIR$\..\..\..\CORE\Src\crc16.c</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\..\..\CORE\Src\framer.c</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\..\..\CORE\Src\shell.c</name>
+    </file>
+  </group>
   <group>
     <name>Application</name>
     <group>

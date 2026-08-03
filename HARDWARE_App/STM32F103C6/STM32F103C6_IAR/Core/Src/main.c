@@ -23,6 +23,10 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "usbd_cdc_if.h"
+#include "framer.h"
+#include "shell.h"
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,6 +62,20 @@ static uint16_t adc_buf[2u * SMP_HALF_TICKS * 2u];  /* 128 halfwords, HT at 64  
 static uint16_t gpio_buf[2u * SMP_HALF_TICKS];      /* 64 halfwords             */
 static volatile uint8_t  smp_half_ready;            /* bit0 = 1st half, bit1 = 2nd */
 static volatile uint32_t smp_tick_count;            /* ticks sampled since start */
+static volatile uint32_t smp_half_start[2];         /* absolute first tick of each half */
+
+/* SLP link state (protocol: Docs/20_Protocol/01_Protocol_SLP_v1.md) */
+#define SLP_D1_BIT 2u /* D1 = PA2 -> bit 2 of GPIOA->IDR */
+#define SLP_D2_BIT 3u /* D2 = PA3 -> bit 3 of GPIOA->IDR */
+static slp_framer_t     slp_fr;
+static slp_shell_t      slp_sh;
+static volatile uint8_t slp_run;       /* 0 = STOP (default), 1 = streaming     */
+static uint32_t         slp_tick_base; /* tick epoch: reset on every START      */
+static uint32_t         slp_dropped;   /* DATA blocks dropped on USB backpressure */
+static uint16_t         slp_cmd_err;   /* unknown commands received             */
+static uint8_t          slp_data_frame[SLP_DATA_FRAME_LEN];
+static uint8_t          slp_resp_frame[160];
+static uint16_t         slp_resp_len;  /* 0 = nothing pending                   */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -73,7 +91,63 @@ static void MX_CRC_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/* Queue a response frame; if the previous one is still pending, the new one is
+   dropped (commands are human-paced, this never happens in practice). */
+static void slp_queue_response(uint8_t type, const char *json)
+{
+  if (slp_resp_len == 0u)
+  {
+    slp_resp_len = slp_build_frame(&slp_fr, slp_resp_frame, type,
+                                   (const uint8_t *)json, (uint16_t)strlen(json));
+  }
+}
 
+static void slp_handle_cmd(slp_cmd_t c)
+{
+  char js[96];
+
+  switch (c)
+  {
+    case SLP_CMD_PING:
+      slp_queue_response(SLP_TYPE_RESP, "{\"pong\":1}");
+      break;
+
+    case SLP_CMD_INFO:
+      slp_queue_response(SLP_TYPE_RESP,
+        "{\"fw\":\"0.1.0\",\"proto\":\"1.0\",\"mcu\":\"F103C6\","
+        "\"rate\":10000,\"ch\":\"A2D2\",\"vref_mv\":3300}");
+      break;
+
+    case SLP_CMD_STAT:
+      (void)snprintf(js, sizeof(js),
+        "{\"run\":%u,\"tick\":%lu,\"dropped\":%lu,\"cmd_err\":%u}",
+        (unsigned)slp_run,
+        (unsigned long)(smp_tick_count - slp_tick_base),
+        (unsigned long)slp_dropped,
+        (unsigned)slp_cmd_err);
+      slp_queue_response(SLP_TYPE_STAT, js);
+      break;
+
+    case SLP_CMD_START: /* new tick epoch, SEQ restarts (protocol §3) */
+      slp_framer_reset(&slp_fr);
+      slp_tick_base = smp_tick_count;
+      smp_half_ready = 0u;
+      slp_dropped = 0u;
+      slp_run = 1u;
+      slp_queue_response(SLP_TYPE_RESP, "{\"ok\":\"START\"}");
+      break;
+
+    case SLP_CMD_STOP:
+      slp_run = 0u;
+      slp_queue_response(SLP_TYPE_RESP, "{\"ok\":\"STOP\"}");
+      break;
+
+    default:
+      slp_cmd_err++;
+      slp_queue_response(SLP_TYPE_ERR, "{\"err\":\"unknown cmd\"}");
+      break;
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -85,8 +159,6 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
   uint32_t led_ts = 0U;
-  uint8_t  echo_buf[64];
-  uint16_t echo_len = 0U;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -126,6 +198,9 @@ int main(void)
   MX_ADC1_Init();
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
+  slp_framer_reset(&slp_fr);
+  slp_shell_reset(&slp_sh);
+
   /* Start the free-running sampler. Order matters for phase alignment
      (Docs/30_Firmware/02): DMA channels first, ADC armed by TIM3 TRGO,
      the timer starts last so both streams begin on the same update event. */
@@ -144,22 +219,67 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* Non-blocking LED heartbeat: 1 Hz proves the main loop is alive. */
-    if ((HAL_GetTick() - led_ts) >= 500U)
+    /* LED heartbeat: 1 Hz idle, 5 Hz while streaming (30/01 LED policy). */
+    if ((HAL_GetTick() - led_ts) >= (slp_run ? 100U : 500U))
     {
       led_ts = HAL_GetTick();
       HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
     }
 
-    /* Echo: drain the CDC RX ring and send the chunk back to the host.
-       On USBD_BUSY the chunk is kept and retried on the next loop pass. */
-    if (echo_len == 0U)
+    /* 1) push the pending response frame, if any (must not be lost) */
+    if ((slp_resp_len > 0U) &&
+        (CDC_Transmit_FS(slp_resp_frame, slp_resp_len) == USBD_OK))
     {
-      echo_len = CDC_ReadRx(echo_buf, (uint16_t)sizeof(echo_buf));
+      slp_resp_len = 0U;
     }
-    if ((echo_len > 0U) && (CDC_Transmit_FS(echo_buf, echo_len) == USBD_OK))
+
+    /* 2) feed incoming bytes to the command shell (CORE) */
+    if (slp_resp_len == 0U)
     {
-      echo_len = 0U;
+      uint8_t b;
+      while (CDC_ReadRx(&b, 1U) == 1U)
+      {
+        slp_cmd_t c = slp_shell_feed(&slp_sh, b);
+        if (c != SLP_CMD_NONE)
+        {
+          slp_handle_cmd(c);
+          break;
+        }
+      }
+    }
+
+    /* 3) stream finished sampler halves as SLP DATA frames */
+    if (slp_run != 0U)
+    {
+      for (uint8_t h = 0U; h < 2U; h++)
+      {
+        if ((smp_half_ready & (uint8_t)(1U << h)) != 0U)
+        {
+          uint32_t hs = smp_half_start[h];
+
+          __disable_irq();
+          smp_half_ready &= (uint8_t)~(1U << h);
+          __enable_irq();
+
+          /* skip a half that began before this epoch's START */
+          if ((int32_t)(hs - slp_tick_base) >= 0)
+          {
+            uint16_t n = slp_build_data_frame(&slp_fr, slp_data_frame,
+                                              hs - slp_tick_base,
+                                              &adc_buf[(uint16_t)h * 64U],
+                                              &gpio_buf[(uint16_t)h * 32U],
+                                              SLP_D1_BIT, SLP_D2_BIT);
+            if (CDC_Transmit_FS(slp_data_frame, n) != USBD_OK)
+            {
+              slp_dropped++; /* USB backpressure: drop whole block (NFR-02) */
+            }
+          }
+        }
+      }
+    }
+    else
+    {
+      smp_half_ready = 0U;
     }
   }
   /* USER CODE END 3 */
@@ -396,14 +516,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-/* Sampler DMA callbacks (ADC half/full transfer): flag the finished half and
-   advance the tick counter - no heavy work in interrupt context (30/01). */
+/* Sampler DMA callbacks (ADC half/full transfer): record the half's first tick,
+   advance the counter, flag the half - no heavy work in interrupt context. */
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc)
 {
   if (hadc->Instance == ADC1)
   {
-    smp_half_ready |= 1u;
+    smp_half_start[0] = smp_tick_count;
     smp_tick_count += SMP_HALF_TICKS;
+    smp_half_ready |= 1u;
   }
 }
 
@@ -411,8 +532,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
   if (hadc->Instance == ADC1)
   {
-    smp_half_ready |= 2u;
+    smp_half_start[1] = smp_tick_count;
     smp_tick_count += SMP_HALF_TICKS;
+    smp_half_ready |= 2u;
   }
 }
 /* USER CODE END 4 */

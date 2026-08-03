@@ -1,0 +1,7 @@
+# GUI_App — зависимости верхнего уровня (NFR-01: ставится обычным pip).
+# ПРАВИЛО: все новые зависимости добавлять СЮДА; установка — install.bat
+# (Windows, двойной клик) или `python install.py`. Версии — см. Docs/40_Host/01.
+dearpygui>=1.11
+pyserial>=3.5
+numpy>=1.26
+pytest>=8
