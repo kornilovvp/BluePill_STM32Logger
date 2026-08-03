@@ -30,11 +30,13 @@ class App:
 
         self.source: DataSource | None = None
         self.streaming = False
+        self.paused = False
 
         self.ui = MainWindow({
             "connect":        lambda *_: self._toggle_connect(),
             "start_stop":     lambda *_: self._toggle_stream(),
             "record":         lambda *_: self._toggle_record(),
+            "pause":          lambda *_: self._toggle_pause(),
             "refresh_ports":  lambda *_: self.ui.set_ports(available_ports()),
             "window_changed": lambda *_: None,
             "sim_toggled":    lambda *_: None,
@@ -96,6 +98,8 @@ class App:
     def _disconnect(self) -> None:
         if self.streaming:
             self._toggle_stream()
+        if self.paused:
+            self._toggle_pause()
         if self.recorder.recording:
             self._toggle_record()
 
@@ -109,6 +113,9 @@ class App:
         if self.source is None:
             return
 
+        if self.paused:                       # старт/стоп снимает паузу
+            self._toggle_pause()
+
         self.streaming = not self.streaming
 
         if self.streaming:
@@ -121,6 +128,22 @@ class App:
                 self._toggle_record()
 
         self.ui.set_streaming(self.streaming)
+
+    def _toggle_pause(self) -> None:
+        """Пауза отображения: приём и запись продолжаются (Docs/40_Host/02)."""
+
+        if self.source is None or self.rings.count == 0:
+            return
+
+        self.paused = not self.paused
+
+        if self.paused:
+            x, channels = self.rings.window(settings.RING_SECONDS)
+            self.ui.charts.freeze(x, channels)
+        else:
+            self.ui.charts.unfreeze()
+
+        self.ui.set_paused(self.paused)
 
     def _toggle_record(self) -> None:
         if self.source is None:
@@ -162,10 +185,14 @@ class App:
         window_s = self.ui.window_seconds()
         self.cfg["window_s"] = window_s
 
-        x, channels = self.rings.window(window_s)
-        if len(x):
-            self.ui.charts.update(x, channels, window_s)
+        if self.paused:
+            self.ui.charts.render_frozen()    # подкачка полного разрешения в зум
+        else:
+            x, channels = self.rings.window(window_s)
+            if len(x):
+                self.ui.charts.show_live(x, channels, window_s)
 
+        self.ui.set_pause_enabled(self.source is not None and self.rings.count > 0)
         self._update_statusbar()
 
     def _update_statusbar(self) -> None:

@@ -69,6 +69,8 @@ class MainWindow:
                            callback=self.cb["start_stop"], enabled=False)
             dpg.add_button(label="Record", tag="btn_record", width=90,
                            callback=self.cb["record"], enabled=False)
+            dpg.add_button(label="Pause", tag="btn_pause", width=90,
+                           callback=self.cb["pause"], enabled=False)
 
             dpg.add_spacer(width=14)
             dpg.add_text("Window:")
@@ -99,6 +101,7 @@ class MainWindow:
             dpg.add_key_press_handler(dpg.mvKey_Spacebar,
                                       callback=self.cb["start_stop"])
             dpg.add_key_press_handler(dpg.mvKey_R, callback=self.cb["record"])
+            dpg.add_key_press_handler(dpg.mvKey_P, callback=self.cb["pause"])
 
     # ── обновление из app.py ────────────────────────────────────────────────
 
@@ -120,6 +123,13 @@ class MainWindow:
     def set_recording(self, recording: bool) -> None:
         dpg.configure_item("btn_record",
                            label=("Stop rec" if recording else "Record"))
+
+    def set_paused(self, paused: bool) -> None:
+        dpg.configure_item("btn_pause",
+                           label=("Resume" if paused else "Pause"))
+
+    def set_pause_enabled(self, enabled: bool) -> None:
+        dpg.configure_item("btn_pause", enabled=enabled)
 
     def set_counters(self, rate: float | None, lost: int, crc: int) -> None:
         dpg.set_value("st_rate",

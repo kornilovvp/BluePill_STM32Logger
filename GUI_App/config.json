@@ -1,5 +1,5 @@
 {
   "port": "COM11",
-  "window_s": 5,
+  "window_s": 10,
   "recordings_dir": "D:\\REPO\\BluePill_STM32Logger\\GUI_App\\recordings"
 }
